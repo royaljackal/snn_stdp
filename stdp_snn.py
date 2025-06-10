@@ -1,47 +1,51 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import itertools
+import random
 from neurons.LIF import LIF
 from neurons.IF import IF
 from neurons.Izhkevich import Izhikevich
-from stdp_types import stdp, sstdp
+from stdp_types import stdp, sstdp, bpstdp
 
 TIME_STEPS = 300  # Количество временных шагов для симуляции
 TIME_PER_STEP = 1
-TAU = 8  # Временная константа мембраны
+TAU = 4  # Временная константа мембраны
 THRESHOLD = 0.4  # Порог срабатывания
-OUTPUT_THRESHOLD = 0.2
+OUTPUT_THRESHOLD = 0.8
 REST_POTENTIAL = 0.0  # Потенциал покоя
+
 STDP_A_PLUS = 0.16  # Параметры STDP
 STDP_A_MINUS = STDP_A_PLUS * 0.9
 STDP_TAU = 1
+STDP_WINDOW = 10
 
 class Classifier:
     def __init__(self, neuron_type, stdp_type, input_classes, hidden_sizes, output_clases, time_steps = TIME_STEPS, time_per_step = TIME_PER_STEP):
         self.neuron_type = neuron_type
         self.stdp_type = stdp_type
+        self.time_steps = time_steps
+        self.time_per_step = time_per_step
         self.input_classes = input_classes
         self.hidden_layers = []
         for i, hidden_size in enumerate(hidden_sizes):
             if (i == 0):
-                self.hidden_layers.append([self.create_neuron(input_classes, TAU, REST_POTENTIAL, THRESHOLD, 0) for _ in range(hidden_size)])
+                self.hidden_layers.append([self.create_neuron(input_classes, TIME_STEPS, TAU, REST_POTENTIAL, THRESHOLD, 0) for _ in range(hidden_size)])
             else:
-                self.hidden_layers.append([self.create_neuron(hidden_sizes[i - 1], TAU, REST_POTENTIAL, THRESHOLD, 0) for _ in range(hidden_size)])
-        self.output_layer = [self.create_neuron(hidden_sizes[len(hidden_sizes) - 1], TAU, REST_POTENTIAL, OUTPUT_THRESHOLD, 0) for _ in range(output_clases)]
-        self.time_steps = time_steps
-        self.time_per_step = time_per_step
+                self.hidden_layers.append([self.create_neuron(hidden_sizes[i - 1], TIME_STEPS, TAU, REST_POTENTIAL, THRESHOLD, 0) for _ in range(hidden_size)])
+        self.output_layer = [self.create_neuron(hidden_sizes[len(hidden_sizes) - 1], TIME_STEPS, TAU, REST_POTENTIAL, OUTPUT_THRESHOLD, 0) for _ in range(output_clases)]
         self.A_p = STDP_A_PLUS
         self.A_m = STDP_A_MINUS
         self.stdp_tau = STDP_TAU
+        self.stdp_window = STDP_WINDOW
 
-    def create_neuron(self, input_count, tau, v_reset, v_threshold, relax_time, print_input = False):
+    def create_neuron(self, input_count, time_steps, tau, v_reset, v_threshold, relax_time, print_input = False):
         match self.neuron_type:
             case "lif":
-                return LIF(input_count, tau, v_reset, v_threshold, relax_time, print_input)
+                return LIF(input_count, time_steps, tau, v_reset, v_threshold, relax_time, print_input)
             case "if":
-                return IF(input_count, tau, v_reset, v_threshold, relax_time, print_input)
+                return IF(input_count, time_steps, tau, v_reset, v_threshold, relax_time, print_input)
             case "izh":
-                return Izhikevich(input_count, a=0.02, b=0.2, c=-65, d=8, v_threshold=30, print_input=print_input)
+                return Izhikevich(input_count, time_steps, a=0.02, b=0.2, c=-65, d=8, v_threshold=30, print_input=print_input)
 
     def encode_input(self, X):
         spikes = np.zeros((len(X), self.input_classes, self.time_steps))
@@ -82,7 +86,7 @@ class Classifier:
     
     def test(self, X_test, y_test, print_per_sample=False):
         X_test_spikes = self.encode_input(X_test)
-        accuracy, operations, multiplications, spike_count = self.forward(X_test_spikes, y_test, True, print_per_sample=print_per_sample)
+        accuracy, _, _, _ = self.forward(X_test_spikes, y_test, True, print_per_sample=print_per_sample)
         self.plot_potential_history(self.output_layer)
         return accuracy
 
@@ -128,10 +132,11 @@ class Classifier:
                     multiplications += neuron_multiplications
                 current_time += self.time_per_step
                 spike_count += np.count_nonzero(output_spikes == 1)
-
-            if (use_stdp):
-                self.stdp_train(X_spikes, y, sample_idx)
             
+                #stdp в цикле
+                if (use_stdp):
+                    self.stdp_train(X_spikes, y, sample_idx, current_time_step)
+
             #Считаем точность
             if np.all(~np.isfinite(output_spike_times)):
                 predicted = -1
@@ -144,86 +149,30 @@ class Classifier:
             if (print_per_sample):
                 print(f"Predicted: {predicted}, Correct: {y[sample_idx]}")
             
-
             if predicted == y[sample_idx]:
                 correct += 1
 
+        #stdp вне цикла
+        #if (use_stdp):
+        #    rand_X_spikes = list(range(len(X_spikes)))
+        #    random.shuffle(rand_X_spikes)
+        #    for sample_idx in rand_X_spikes:    
+        #        self.stdp_train(X_spikes, y, sample_idx)
+
         #for i in range(len(self.output_layer) + 1):
         #    print(f"neuron {i - 1}: 0 = {(results[i, 0] / np.sum(results[i, :]) * 100):2f}; 1 = {(results[i, 1] / np.sum(results[i, :]) * 100):2f}; 2 = {(results[i, 2] / np.sum(results[i, :]) * 100):2f}; count = {np.sum(results[i, :])}")
-        print()
+        #print()
 
         return correct / len(X_spikes) * 100, operations, multiplications, spike_count
 
-    def stdp_train(self, X_spikes, y, sample_idx):
+    def stdp_train(self, X_spikes, y, sample_idx, current_time_step):
         match self.stdp_type:
             case "stdp":
-                stdp.train(X_spikes, y, sample_idx, self.time_per_step, self.stdp_tau, self.A_p, self.A_m, self.hidden_layers, self.output_layer)
+                stdp.train(X_spikes, y, sample_idx, self.time_per_step, self.stdp_tau, self.A_p, self.A_m, self.stdp_window, self.hidden_layers, self.output_layer)
             case "sstdp":
-                sstdp.train(X_spikes, y, sample_idx, self.time_per_step, self.stdp_tau, self.A_p, self.A_m, self.hidden_layers, self.output_layer)
+                sstdp.train(X_spikes, y, sample_idx, self.time_per_step, self.stdp_tau, self.A_p, self.A_m, self.stdp_window, self.hidden_layers, self.output_layer)
             case "bpstdp":
-                return
-
-    def stdp_layer(self, layer, input_spikes):
-        dw_inc = 0
-        dw_dec = 0
-        for i, neuron in enumerate(layer):
-            for t_post, spike_post in enumerate(neuron.spikes):
-                if (spike_post <= 0):
-                    continue
-                for j, input_neuron_spikes in enumerate(input_spikes):
-                    for t_pre, spike_pre in enumerate(input_neuron_spikes):
-                        if (spike_pre <= 0):
-                            continue
-
-                        delta_t = (t_post - t_pre) * self.time_per_step
-
-                        if delta_t >= 0:
-                            dw = self.A_p * np.exp(delta_t / self.stdp_tau)
-                            dw_inc += 1
-                            #print(f"dw_inc = {dw}")
-                        else:
-                            dw = -self.A_m * np.exp(-delta_t / self.stdp_tau)
-                            dw_dec += 1
-                            #print(f"dw_dec = {dw}")
-
-                        neuron.weights[j] += dw
-                        neuron.weights[j] = max(neuron.weights[j], 1e-3)
-
-                neuron.weights /= np.linalg.norm(neuron.weights) + 1e-6
-
-        #print (f"dw_inc: {dw_inc}; dw_dec: {dw_dec}")
-
-    def stdp_supervised_output_layer(self, correct_class, input_spikes):
-        for i, neuron in enumerate(self.output_layer):
-            target = (i == correct_class)
-            for t_post, spike_post in enumerate(neuron.spikes):
-                if not spike_post:
-                    continue
-                for j, input_neuron_spikes in enumerate(input_spikes):
-                    for t_pre, spike_pre in enumerate(input_neuron_spikes):
-                        if not spike_pre:
-                            continue
-
-                        delta_t = (t_post - t_pre) * self.time_per_step
-
-                        if target:
-                            # усиливаем, если правильный нейрон
-                            if delta_t >= 0:
-                                dw = self.A_p * np.exp(delta_t / self.stdp_tau)
-                            else:
-                                dw = -self.A_m * np.exp(-delta_t / self.stdp_tau)
-                        else:
-                            # подавляем, если неправильный нейрон
-                            if delta_t >= 0:
-                                dw = -self.A_p * np.exp(delta_t / self.stdp_tau)
-                            else:
-                                dw = self.A_m * np.exp(-delta_t / self.stdp_tau)
-
-                        neuron.weights[j] += dw
-                        neuron.weights[j] = max(neuron.weights[j], 1e-3)
-
-                # нормализация весов
-                neuron.weights /= np.linalg.norm(neuron.weights) + 1e-6
+                bpstdp.train(X_spikes, y, sample_idx, self.time_per_step, current_time_step, self.input_classes, self.hidden_layers, self.output_layer)
 
     def clear_potential_history(self):
         for neuron in (itertools.chain.from_iterable(self.hidden_layers + [self.output_layer])):

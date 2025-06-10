@@ -1,7 +1,7 @@
 import numpy as np
 
 class IF:
-    def __init__(self, input_count, tau, v_reset, v_threshold, relax_time, print_input = False):
+    def __init__(self, input_count, time_steps, tau, v_reset, v_threshold, relax_time, print_input = False):
         self.weights = np.zeros(input_count)
         self.tau = tau
         self.v_reset = v_reset
@@ -12,7 +12,7 @@ class IF:
         self.relax_time_left = 0
         self.last_spike_time = -np.inf
         self.first_spike_time = np.inf
-        self.spikes = []
+        self.spikes = [0] * time_steps
         self.spike_trace = []
         self.print_input = print_input
 
@@ -46,10 +46,9 @@ class IF:
             self.v = self.v_reset
 
         if (spike):
-            self.spikes.append(1)
+            self.spikes[current_time] = 1
             self.spike_trace.append(True)
         else:
-            self.spikes.append(0)
             self.spike_trace.append(False)
         return spike, operations, multiplications
     
@@ -57,5 +56,5 @@ class IF:
         self.v = self.v_reset
         self.last_spike_time = -np.inf
         self.first_spike_time = np.inf
-        self.spikes = []
+        self.spikes = [0] * len(self.spikes)
         self.relax_time_left = 0
