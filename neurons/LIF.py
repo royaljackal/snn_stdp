@@ -12,19 +12,20 @@ class LIF:
         self.relax_time_left = 0
         self.last_spike_time = -np.inf
         self.first_spike_time = np.inf
-        self.spikes = [0] * time_steps
+        self.spikes = np.zeros(time_steps, dtype=np.uint8)
         self.spike_trace = []
         self.print_input = print_input
 
-    def update(self, spike_indicies, current_time, dt):
+    def update(self, spike_indices, current_time, dt):
         operations = 0
         multiplications = 0
-        current_input = 0
-        for spike_index in spike_indicies:
-            current_input += self.weights[spike_index]
-            operations += 1
+
+        current_input = np.sum(self.weights[spike_indices])
+        operations += len(spike_indices)
+
         if self.print_input:
             print(current_input)
+            
         self.v += (-self.v + current_input) * dt / self.tau
         operations += 4
         multiplications += 2
@@ -53,5 +54,5 @@ class LIF:
         self.v = self.v_reset
         self.last_spike_time = -np.inf
         self.first_spike_time = np.inf
-        self.spikes = [0] * len(self.spikes)
+        self.spikes.fill(0)
         self.relax_time_left = 0

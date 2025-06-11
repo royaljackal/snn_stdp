@@ -1,10 +1,9 @@
 import numpy as np
 
-def train(X_spikes, y, sample_idx, time_per_step, tau, A_p, A_m, window, hidden_layers, output_layer):
-    input_spikes = X_spikes[sample_idx, :, :]
+def train(X_sample_spikes, y, sample_idx, time_per_step, tau, A_p, A_m, window, hidden_layers, output_layer):
     
     for hidden_layer in hidden_layers:
-        stdp_layer(hidden_layer, input_spikes)
+        stdp_layer(hidden_layer, X_sample_spikes)
         input_spikes = [neuron.spikes for neuron in hidden_layer]
 
     stdp_layer(time_per_step, tau, A_p, A_m, window, output_layer, input_spikes)
