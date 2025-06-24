@@ -1,37 +1,35 @@
 import numpy as np
 
-def train(X_sample_spikes, y, sample_idx, time_per_step, tau, A_p, A_m, window, hidden_layers, output_layer):
+def train(X_sample_spikes, y_sample, time_per_step, 
+          hidden_layers, output_layer,
+          tau, A_p, A_m, window):
     
+    input_spikes = X_sample_spikes
     for hidden_layer in hidden_layers:
-        stdp_layer(hidden_layer, X_sample_spikes)
-        input_spikes = [neuron.spikes for neuron in hidden_layer]
+        stdp_layer(hidden_layer, input_spikes, time_per_step, tau, A_p, A_m, window)
+        input_spikes = hidden_layer.spikes
 
-    stdp_layer(time_per_step, tau, A_p, A_m, window, output_layer, input_spikes)
+    stdp_layer(output_layer, input_spikes, time_per_step, tau, A_p, A_m, window)
 
-def stdp_layer(time_per_step, tau, A_p, A_m, window, layer, input_spikes):
-        dw_inc = 0
-        dw_dec = 0
-        for i, neuron in enumerate(layer):
-            for t_post, spike_post in enumerate(neuron.spikes):
-                if (spike_post <= 0):
-                    continue
-                for j, input_neuron_spikes in enumerate(input_spikes):
-                    for t_pre, spike_pre in enumerate(input_neuron_spikes):
-                        if (spike_pre <= 0):
+def stdp_layer(layer, input_spikes, time_per_step, tau, A_p, A_m, window):
+    for i, neuron_spikes_post in enumerate(layer.spikes):
+        for t_post, spike_post in enumerate(neuron_spikes_post):
+            if (spike_post <= 0):
+                continue
+            for j, neuron_spikes_pre in enumerate(input_spikes):
+                for t_pre in range(max(0, t_post - window), min(t_post + window, len(neuron_spikes_pre))):
+                    spike_pre = neuron_spikes_pre[t_pre]
+                    if not spike_pre:
                             continue
 
-                        delta_t = (t_post - t_pre) * time_per_step
+                    delta_t = (t_post - t_pre) * time_per_step
 
-                        if delta_t >= 0:
-                            dw = A_p * np.exp(delta_t / tau)
-                            dw_inc += 1
-                            #print(f"dw_inc = {dw}")
-                        else:
-                            dw = -A_m * np.exp(-delta_t / tau)
-                            dw_dec += 1
-                            #print(f"dw_dec = {dw}")
+                    if delta_t >= 0:
+                        dw = A_p * np.exp(delta_t / tau)
+                    else:
+                        dw = -A_m * np.exp(-delta_t / tau)
 
-                        neuron.weights[j] += dw
-                        neuron.weights[j] = max(neuron.weights[j], 1e-3)
+                    layer.weights[i][j] += dw
+                    layer.weights[i][j] = max(layer.weights[i][j], 1e-3)
 
-                neuron.weights /= np.linalg.norm(neuron.weights) + 1e-6
+            layer.weights[i] /= np.linalg.norm(layer.weights[i]) + 1e-6

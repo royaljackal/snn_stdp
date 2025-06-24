@@ -1,60 +1,57 @@
 import numpy as np
 
 class IF:
-    def __init__(self, input_count, time_steps, tau, v_reset, v_threshold, relax_time, print_input = False):
-        self.weights = np.zeros(input_count)
+    def __init__(self, size, input_count, time_steps, tau, v_reset, v_threshold, relax_time, print_input = False):
+        self.size = size
+        self.input_count = input_count
+        self.weights = np.zeros((size, input_count))
+
         self.tau = tau
         self.v_reset = v_reset
         self.v_threshold = v_threshold
-        self.v = self.v_reset
-        self.v_trace = []
         self.relax_time = relax_time
-        self.relax_time_left = 0
-        self.last_spike_time = -np.inf
-        self.first_spike_time = np.inf
-        self.spikes = [0] * time_steps
-        self.spike_trace = []
+        
+        self.v = np.full(size, v_reset, dtype=np.float32)
+        self.relax_time_left = np.zeros(size, dtype=np.float32)
+        
+        self.spikes = np.zeros((size, time_steps), dtype=np.uint8)
+        
         self.print_input = print_input
+        self.v_trace = []
+        self.spike_trace = []
 
-    def update(self, spike_indicies, current_time, dt):
+    def update(self, input_spikes, current_time, dt):
         operations = 0
         multiplications = 0
-        current_input = 0
 
-        for spike_index in spike_indicies:
-            current_input += self.weights[spike_index]
-            operations += 1
+        current_input = self.weights @ input_spikes
+        operations += self.size * len(input_spikes.nonzero())
 
         if self.print_input:
             print(current_input)
 
-        self.v += current_input * dt / self.tau
-        self.v_trace.append(self.v)
-        operations += 3
-        multiplications += 2
+        #if current_input != 0:
+        dv = current_input * dt / self.tau
+        self.v += dv
+        operations += 3 * self.size
+        multiplications += 2 * self.size
 
-        spike = False
-        if self.v >= self.v_threshold:
-            spike = True
-            if (self.first_spike_time > current_time):
-                self.first_spike_time = current_time
-            self.last_spike_time = current_time
-            self.relax_time_left = self.relax_time
-            self.v = self.v_reset
-        elif self.relax_time_left > 0:
-            self.relax_time_left -= dt
-            self.v = self.v_reset
+        self.v_trace.append(self.v.copy())
 
-        if (spike):
-            self.spikes[current_time] = 1
-            self.spike_trace.append(True)
-        else:
-            self.spike_trace.append(False)
-        return spike, operations, multiplications
+        refractory_mask = self.relax_time_left > 0
+        self.v[refractory_mask] = self.v_reset
+        self.relax_time_left[refractory_mask] -= dt
+
+        spike_mask = self.v >= self.v_threshold
+        self.spikes[:, current_time] = spike_mask.astype(np.uint8)
+        self.spike_trace.append(spike_mask.copy())
+
+        self.v[spike_mask] = self.v_reset
+        self.relax_time_left[spike_mask] = self.relax_time
+
+        return spike_mask, operations, multiplications
     
     def reset(self):
-        self.v = self.v_reset
-        self.last_spike_time = -np.inf
-        self.first_spike_time = np.inf
-        self.spikes = [0] * len(self.spikes)
-        self.relax_time_left = 0
+        self.v.fill(self.v_reset)
+        self.spikes.fill(0)
+        self.relax_time_left.fill(0)

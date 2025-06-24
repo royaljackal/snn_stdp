@@ -1,50 +1,48 @@
 import numpy as np
 
-def train(X_sample_spikes, y, sample_idx, time_per_step, tau, A_p, A_m, window, hidden_layers, output_layer):    
-    stdp_supervised_output_layer(time_per_step, tau, A_p, A_m, window, y[sample_idx], output_layer, [neuron.spikes for neuron in hidden_layers[len(hidden_layers) - 1]])
+def train(X_sample_spikes, y_sample, time_per_step, 
+          hidden_layers, output_layer,
+          tau, A_p, A_m, window):   
+    
+    #input_spikes = X_sample_spikes
+    #for hidden_layer in hidden_layers:
+    #    stdp_layer(hidden_layer, input_spikes, time_per_step, tau, A_p, A_m, window)
+    #    input_spikes = hidden_layer.spikes
+    
+    stdp_supervised_output_layer(output_layer, hidden_layers[len(hidden_layers) - 1].spikes, y_sample, time_per_step, tau, A_p, A_m, window)
 
-def stdp_layer(time_per_step, tau, A_p, A_m, window, layer, input_spikes):
-    dw_inc = 0
-    dw_dec = 0
-    for i, neuron in enumerate(layer):
-        for t_post, spike_post in enumerate(neuron.spikes):
+def stdp_layer(layer, input_spikes, time_per_step, tau, A_p, A_m, window):
+    for i, neuron_spikes_post in enumerate(layer.spikes):
+        for t_post, spike_post in enumerate(neuron_spikes_post):
             if (spike_post <= 0):
                 continue
-            for j, input_neuron_spikes in enumerate(input_spikes):
-                for t_pre, spike_pre in enumerate(input_neuron_spikes):
-                    if (spike_pre <= 0):
-                        continue
+            for j, neuron_spikes_pre in enumerate(input_spikes):
+                for t_pre in range(max(0, t_post - window), min(t_post + window, len(neuron_spikes_pre))):
+                    spike_pre = neuron_spikes_pre[t_pre]
+                    if not spike_pre:
+                            continue
 
                     delta_t = (t_post - t_pre) * time_per_step
 
                     if delta_t >= 0:
                         dw = A_p * np.exp(delta_t / tau)
-                        dw_inc += 1
-                        #print(f"dw_inc = {dw}")
                     else:
                         dw = -A_m * np.exp(-delta_t / tau)
-                        dw_dec += 1
-                        #print(f"dw_dec = {dw}")
 
-                    neuron.weights[j] += dw
-                    neuron.weights[j] = max(neuron.weights[j], 1e-3)
+                    layer.weights[i][j] += dw
+                    layer.weights[i][j] = max(layer.weights[i][j], 1e-3)
 
-            neuron.weights /= np.linalg.norm(neuron.weights) + 1e-6
+            layer.weights[i] /= np.linalg.norm(layer.weights[i]) + 1e-6
 
-def stdp_supervised_output_layer(time_per_step, tau, A_p, A_m, window, correct_class, output_layer, input_spikes):
-    for i, neuron in enumerate(output_layer):
+def stdp_supervised_output_layer(output_layer, input_spikes, correct_class, time_per_step, tau, A_p, A_m, window):
+    for i, neuron_spikes_post in enumerate(output_layer.spikes):
         target = (i == correct_class)
-
-        #print(f"neuron {i}")
-        #for neuron_temp in output_layer:
-        #    print(neuron_temp.weights)
-
-        for t_post, spike_post in enumerate(neuron.spikes):
+        for t_post, spike_post in enumerate(neuron_spikes_post):
             if not spike_post:
                 continue
-            for j, input_neuron_spikes in enumerate(input_spikes):
-                for t_pre in range(max(0, t_post - window), min(t_post + window, len(input_neuron_spikes))):
-                    spike_pre = input_neuron_spikes[t_pre]
+            for j, neuron_spikes_pre in enumerate(input_spikes):
+                for t_pre in range(max(0, t_post - window), min(t_post + window, len(neuron_spikes_pre))):
+                    spike_pre = neuron_spikes_pre[t_pre]
                     if not spike_pre:
                         continue
 
@@ -63,16 +61,8 @@ def stdp_supervised_output_layer(time_per_step, tau, A_p, A_m, window, correct_c
                         else:
                             dw = A_m * np.exp(delta_t / tau)
 
-                    #print(f"weight_before:{neuron.weights[j]}")
-                    neuron.weights[j] += dw
-                    neuron.weights[j] = max(neuron.weights[j], 1e-3)
-                    #print(f"weight_after:{neuron.weights[j]}")
-                    #print(f"neuron_post:{i}; t_post:{t_post};\nneuron_pre:{j}; t_pre:{t_pre}\ndw:{dw}\n")
+                    output_layer.weights[i][j] += dw
+                    output_layer.weights[i][j] = max(output_layer.weights[i][j], 1e-3)
 
             # нормализация весов
-            neuron.weights /= np.linalg.norm(neuron.weights) + 1e-6
-
-            #print(f"spike {t_post}")
-            #for neuron_temp in output_layer:
-            #    print(neuron_temp.weights)
-        #print()
+            output_layer.weights[i] /= np.linalg.norm(output_layer.weights[i]) + 1e-6
