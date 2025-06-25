@@ -25,7 +25,7 @@ class LIF:
         multiplications = 0
 
         current_input = self.weights @ input_spikes
-        operations += self.size * len(input_spikes.nonzero())
+        operations += self.size * np.count_nonzero(input_spikes)
 
         if self.print_input:
             print(current_input)

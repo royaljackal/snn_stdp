@@ -13,7 +13,6 @@ X_test = None
 y_train = None
 y_test = None
 
-# Стандартные параметры по сочетаниям
 PRESETS = {
     ("lif", "stdp", "iris"): {
         "hidden_sizes": "10", "time_steps": 100, "time_per_step": 1, "tau": 4,
@@ -30,27 +29,39 @@ PRESETS = {
     ("lif", "bpstdp", "iris"): {
         "hidden_sizes": "12,6", "time_steps": 100, "time_per_step": 1, "tau": 4,
         "threshold": 1, "output_threshold": 2, "rest_potential": 0.0,
-        "bp_epsilon": 4, "bp_lr": 0.005,
+        "bp_epsilon": 8, "bp_lr": 0.005,
         "num_epochs": 10
     },
     ("if", "bpstdp", "iris"): {
         "hidden_sizes": "12,6", "time_steps": 100, "time_per_step": 1, "tau": 4,
         "threshold": 1, "output_threshold": 2, "rest_potential": 0.0,
-        "bp_epsilon": 4, "bp_lr": 0.005,
+        "bp_epsilon": 8, "bp_lr": 0.005,
         "num_epochs": 10
     },
-    ("lif", "stdp", "mnist"): {
-        "hidden_sizes": "100,50", "time_steps": 100, "time_per_step": 1.0, "tau": 10.0,
-        "threshold": 1.0, "output_threshold": 0.8, "rest_potential": 0.0,
-        "A_p": 0.01, "A_m": 0.012, "stdp_tau": 20.0, "stdp_window": 40.0,
+    ("izh", "bpstdp", "iris"): {
+        "hidden_sizes": "12,6", "time_steps": 100, "time_per_step": 1, "tau": 4,
+        "threshold": 30, "output_threshold": 30, "rest_potential": 0.0,
+        "bp_epsilon": 8, "bp_lr": 0.001,
+        "num_epochs": 10
+    },
+    ("lif", "bpstdp", "iris"): {
+        "hidden_sizes": "750,150", "time_steps": 50, "time_per_step": 1, "tau": 4,
+        "threshold": 10, "output_threshold": 20, "rest_potential": 0.0,
+        "bp_epsilon": 2, "bp_lr": 0.0005,
+        "num_epochs": 1
+    },
+    ("if", "bpstdp", "iris"): {
+        "hidden_sizes": "750,150", "time_steps": 50, "time_per_step": 1, "tau": 4,
+        "threshold": 10, "output_threshold": 20, "rest_potential": 0.0,
+        "bp_epsilon": 2, "bp_lr": 0.0005,
         "num_epochs": 1
     },
     ("izh", "bpstdp", "iris"): {
-        "hidden_sizes": "20", "time_steps": 100, "time_per_step": 1.0, "tau": 5.0,
-        "threshold": 0.8, "output_threshold": 0.6, "rest_potential": -70.0,
-        "bp_epsilon": 5, "bp_lr": 0.001,
-        "num_epochs": 10
-    }
+        "hidden_sizes": "750,150", "time_steps": 50, "time_per_step": 1, "tau": 4,
+        "threshold": 30, "output_threshold": 30, "rest_potential": 0.0,
+        "bp_epsilon": 2, "bp_lr": 0.00001,
+        "num_epochs": 1
+    },
 }
 
 def load_dataset(dataset_type):
@@ -87,7 +98,6 @@ def capture_output(func, *args, **kwargs):
         sys.stdout = sys_stdout
     return buffer.getvalue(), result
 
-# Главный метод, обновляющий значения и видимость
 def handle_all_updates(neuron_type, stdp_type, dataset):
     key = (neuron_type, stdp_type, dataset)
     preset = PRESETS.get(key, {})
@@ -181,13 +191,11 @@ with gr.Blocks() as demo:
         rest_potential = gr.Number(label="Потенциал покоя", precision=4)
 
     with gr.Row():
-        # STDP-поля
         A_p = gr.Number(label="A+", visible=True)
         A_m = gr.Number(label="A-", visible=True)
         stdp_tau = gr.Number(label="STDP Tau", visible=True)
         stdp_window = gr.Number(label="STDP Window", visible=True)
 
-        # BP-STDP поля
         bp_epsilon = gr.Number(label="BP epsilon", visible=False, precision=0)
         bp_lr = gr.Number(label="BP learning rate", visible=False)
 

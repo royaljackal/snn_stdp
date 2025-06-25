@@ -8,10 +8,10 @@ class Izhikevich:
 
         self.a = a
         self.b = b
-        self.c = c  # reset voltage
-        self.d = d  # recovery increment
-        self.v = np.full(size, self.c)  # initial membrane potential
-        self.u = self.b * self.v  # initial recovery variable
+        self.c = c
+        self.d = d
+        self.v = np.full(size, self.c)
+        self.u = self.b * self.v
         self.v_threshold = v_threshold
 
         self.spikes = np.zeros((size, time_steps), dtype=np.uint8)
@@ -26,7 +26,7 @@ class Izhikevich:
         multiplications = 0
 
         current_input = self.weights @ (input_spikes * 20)
-        operations += self.size * len(input_spikes.nonzero())
+        operations += self.size * np.count_nonzero(input_spikes)
 
         if self.print_input:
             print(current_input)

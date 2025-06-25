@@ -8,13 +8,13 @@ from IPython.display import clear_output
 from io import BytesIO
 from PIL import Image
 
-TIME_STEPS = 50  # Количество временных шагов для симуляции
+TIME_STEPS = 50
 TIME_PER_STEP = 1
-TAU = 4  # Временная константа мембраны
-THRESHOLD = 0.4  # Порог срабатывания
+TAU = 4
+THRESHOLD = 0.4
 OUTPUT_THRESHOLD = 0.8
 
-STDP_A_PLUS = 0.16  # Параметры STDP
+STDP_A_PLUS = 0.16
 STDP_A_MINUS = STDP_A_PLUS * 0.9
 STDP_TAU = 1
 STDP_WINDOW = 10
@@ -26,7 +26,8 @@ class Classifier:
     def __init__(self, neuron_type, stdp_type, input_classes, hidden_sizes, output_clases, time_steps = TIME_STEPS, time_per_step = TIME_PER_STEP,
                  tau = TAU, threshold = THRESHOLD, output_threshold = OUTPUT_THRESHOLD, rest_potential = 0.0,
                  A_p = STDP_A_PLUS, A_m = STDP_A_MINUS, stdp_tau = STDP_TAU, stdp_window = STDP_WINDOW,
-                 bp_epsilon = BP_EPSILON, bp_lr = BP_EPSILON):
+                 bp_epsilon = BP_EPSILON, bp_lr = BP_EPSILON,
+                 weights_type = "rand"):
         self.neuron_type = neuron_type
         self.stdp_type = stdp_type
         self.time_steps = time_steps
@@ -51,6 +52,7 @@ class Classifier:
         self.best_accuracy = -1
         self.error_count = 0
         self.error_margin = 1
+        self.weights_type = weights_type
 
         self.reset_weights()
 
@@ -70,11 +72,10 @@ class Classifier:
 
         X_sample = X[sample_id]
         rates = (X_sample - self.mins) / (self.maxs - self.mins + 1e-9)
-        #rates = rates ** 3
         randoms = np.random.rand(self.input_classes, self.time_steps)
         return (randoms < rates[:, None]).astype(np.uint8)
 
-    def train(self, X_train, y_train, epochs=10, shuffle_dataset = False, plot_history = False, print_per_sample = False, ignore_test = False):
+    def train(self, X_train, y_train, epochs=10, shuffle_dataset = False, plot_history = False, print_per_sample = False, print_progress = False, ignore_test = False):
         self.error_count = 0
         self.best_accuracy = -1
         self.epoch_log = []
@@ -88,7 +89,7 @@ class Classifier:
                 X_train, y_train = X_train[p], y_train[p]
 
             self.clear_potential_history()
-            accuracy, epoch_operations, epoch_multiplications, epoch_spike_count = self.forward(X_train, y_train, epoch, True, print_per_sample, ignore_test)
+            accuracy, epoch_operations, epoch_multiplications, epoch_spike_count = self.forward(X_train, y_train, epoch, True, print_per_sample, print_progress, ignore_test)
             operations += epoch_operations
             multiplications += epoch_multiplications
             spike_count += epoch_spike_count
@@ -105,7 +106,7 @@ class Classifier:
                     self.error_count = 0
             """
             epoch_result = f"Epoch: {epoch}; Accuracy: {self.best_accuracy}"
-            if (print_per_sample):
+            if (print_progress):
                 self.epoch_log.append(f"Epoch: {epoch}; Accuracy: {accuracy}")
                 for log_item in self.epoch_log:
                     print(log_item)
@@ -154,8 +155,10 @@ class Classifier:
 
     def reset_weights(self):
         for layer in self.hidden_layers + [self.output_layer]:
-            layer.weights = np.random.randn(*layer.weights.shape)
-            #layer.weights = np.random.uniform(3.0, 10.0, size=layer.weights.shape)
+            if (self.weights_type == "rand"):
+                layer.weights = np.random.rand(*layer.weights.shape)
+            elif (self.weights_type == "randn"):
+                layer.weights = np.random.randn(*layer.weights.shape)
 
     def save_weights(self):
         self.saved_weights = [0] * (len(self.hidden_layers) + 1)
@@ -167,30 +170,26 @@ class Classifier:
             for i, layer in enumerate(self.hidden_layers + [self.output_layer]):
                 layer.weights = self.saved_weights[i]
 
-    def forward(self, X, y, epoch, use_stdp=False, print_per_sample=False, ignore_test=False):
+    def forward(self, X, y, epoch, use_stdp=False, print_per_sample=False, print_progress = False, ignore_test=False):
         correct = 0
         operations = 0
         multiplications = 0
         spike_count = 0
         for sample_idx in range(len(X)):
-            if (print_per_sample):
+            if (print_progress):
                 clear_output(wait=True)
                 print(f"Epoch: {epoch}; Sample: {sample_idx}")
                 for log_item in self.epoch_log:
                     print(log_item)
 
-            # Сброс нейронов
             for layer in self.hidden_layers + [self.output_layer]:
                 layer.reset()
 
             X_sample_spikes = self.encode_sample(X, sample_idx)
 
-            # Для каждого временного промежутка
             for current_time_step in range(self.time_steps):
-                # Получаем входные спайки для этого временного шага
                 input_spikes = X_sample_spikes[:, current_time_step]
                 
-                # Обновляем скрытые нейроны
                 for hidden_layer in self.hidden_layers:
                     hidden_spikes, layer_operations, layer_multiplications = hidden_layer.update(input_spikes, current_time_step, self.time_per_step)
                     operations += layer_operations
@@ -198,17 +197,14 @@ class Classifier:
                     input_spikes = hidden_spikes
                     spike_count += np.count_nonzero(hidden_spikes == 1)
 
-                # Обновляем выходные нейроны
                 output_spikes, layer_operations, layer_multiplications = self.output_layer.update(input_spikes, current_time_step, self.time_per_step)
                 operations += layer_operations
                 multiplications += layer_multiplications
                 spike_count += np.count_nonzero(output_spikes == 1)
                 
-                #stdp в цикле
                 if (use_stdp and self.stdp_type == "bpstdp"):
                     self.stdp_train(X_sample_spikes, y, sample_idx, current_time_step)
 
-            #stdp вне цикла
             if (use_stdp and self.stdp_type != "bpstdp"):
                 self.stdp_train(X_sample_spikes, y, sample_idx, current_time_step)
             

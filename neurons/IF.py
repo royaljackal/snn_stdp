@@ -25,12 +25,11 @@ class IF:
         multiplications = 0
 
         current_input = self.weights @ input_spikes
-        operations += self.size * len(input_spikes.nonzero())
+        operations += self.size * np.count_nonzero(input_spikes)
 
         if self.print_input:
             print(current_input)
 
-        #if current_input != 0:
         dv = current_input * dt / self.tau
         self.v += dv
         operations += 3 * self.size
